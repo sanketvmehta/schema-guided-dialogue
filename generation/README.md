@@ -21,8 +21,9 @@ downloaded from
 ```
 # Run this command from the repository home directory.
 
-python -m generation.prepare_dataset --sgd_dir <sgd_dataset_directory> \
---output_dir <output_directory>
+python -m generation.prepare_dataset --sgd_dir dstc8-schema-guided-dialogue \
+--output_dir processed_data \ 
+--templates_dir generation/utterance_templates
 ```
 
 Please update `TSV_DATA_DIR` in [t5\_tasks.py](t5_tasks.py) with the output

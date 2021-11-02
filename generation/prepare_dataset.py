@@ -21,7 +21,8 @@ import random
 
 from absl import app
 from absl import flags
-from schema_guided_dialogue.generation import utterance_generator
+# from schema_guided_dialogue.generation import utterance_generator
+from generation import utterance_generator
 import tensorflow as tf
 
 
@@ -153,10 +154,12 @@ class Preprocessor:
       action_str = f"{action_str}, values = {values}"
     return action_str
 
-  def create_tsv_data(self, dialogs, output_tsv_path, query_dialog_ids=None):
+  def create_data(self, dialogs, output_tsv_path, output_json_path, query_dialog_ids=None):
     """Convert a dialog json file into a tsv for seq2seq models."""
     count = 0
+    count_null_query = 0
     random.shuffle(dialogs)
+    data = {}
     with tf.io.gfile.GFile(output_tsv_path, "w") as tsvfile:
       writer = csv.writer(tsvfile, delimiter="\t")
       for dialog in dialogs:
@@ -167,8 +170,10 @@ class Preprocessor:
         turns = dialog["turns"]
         # add turn number
         turn_id = 0
+        user_query = ''
         for turn in turns:
           if turn["speaker"] == "USER":
+            user_query = turn["utterance"]
             continue
           services = list(set([frame["service"] for frame in turn["frames"]]))
           if len(services) > 1 and self.input_representation_type != "t2g2":
@@ -181,8 +186,18 @@ class Preprocessor:
           structured_data = self.preprocess_turn(turn, schema)
           structured_data = _remove_newline_and_tabs(structured_data)
           metadata = _remove_newline_and_tabs(json.dumps(turn))
-          writer.writerow([structured_data, text, metadata, dialog_id, turn_id])
+          writer.writerow([structured_data, text, metadata, dialog_id, turn_id, user_query])
+          data[f"{dialog_id}-{turn_id}"] = [structured_data, text, metadata, dialog_id, turn_id, user_query]
+          count += 1
+          if user_query == '':
+            count_null_query += 1
+          user_query = ''
           turn_id += 1
+
+    print("No. of examples : ", count)
+    print("No. of unique dialogs-turns: ", len(data))
+    print("No. of null user queries : ", count_null_query)
+    json.dump(data, tf.io.gfile.GFile(output_json_path, "w"))
 
 
 def create_fewshot_splits(dialogs, data_processor, output_dir, encoding_scheme):
@@ -194,7 +209,8 @@ def create_fewshot_splits(dialogs, data_processor, output_dir, encoding_scheme):
         dialog_ids.add(line.strip())
     data_size = filename[:-4]  # Remove the .txt extension.
     tsv_path = os.path.join(output_dir, f"{encoding_scheme}_{data_size}.tsv")
-    data_processor.create_tsv_data(dialogs, tsv_path, dialog_ids)
+    json_path = os.path.join(output_dir, f"{encoding_scheme}_{data_size}.json")
+    data_processor.create_data(dialogs, tsv_path, json_path, dialog_ids)
 
 
 def main(_):
@@ -218,7 +234,8 @@ def main(_):
       if not tf.io.gfile.isdir(output_dir):
         tf.io.gfile.makedirs(output_dir)
       output_tsv_path = os.path.join(output_dir, f"{encoding_scheme}_all.tsv")
-      data_processor.create_tsv_data(dialogs, output_tsv_path)
+      output_json_path = os.path.join(output_dir, f"{encoding_scheme}_all.json")
+      data_processor.create_data(dialogs, output_tsv_path, output_json_path)
 
       # Create fewshot splits for the training set.
       if split == "train":
